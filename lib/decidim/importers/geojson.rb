@@ -46,7 +46,7 @@ module Decidim
       end
 
       def hex_color
-        return ENV["COLOR"] if ENV["COLOR"].present?
+        return ENV["COLOR"].strip if ENV["COLOR"].present?
 
         @default_values[:hex_color]
       end
