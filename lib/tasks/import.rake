@@ -2,155 +2,108 @@
 
 namespace :tasks do
   @logger = Rails.logger
+  @default_hex_color = "#157173"
+  @default_scope_type = "municipality"
 
   namespace :import do
-    desc "Usage: rake tasks:import:geojson FILE='<filename.geojson>' ORG=<organization_id> [VERBOSE=true]"
+    desc "Usage: rake tasks:import:geojson FILE='<filename.geojson>' ORG_ID=<organization_id> VERBOSE='true' FORCE_EXT_TO='.json' SCOPE_TYPE='municipality'"
     task geojson: :environment do
-      configs = {
-        verbose: ENV["VERBOSE"],
-        file: ENV["FILE"],
-        organization_id: ENV["ORGANIZATION_ID"],
-        scope_type: ENV["SCOPE_TYPE"],
-        forced_file_extension: ENV["FORCE_EXT_TO"]
-      }
-
-      @verbose_mode = configs[:verbose].present? && configs[:verbose] == "true"
-      @logger = logger_output
+      @logger = logger
       display_help if configs[:file].blank?
 
-      @file = configs[:file]
-      validate_file(configs[:forced_file_extension].presence || ".geojson")
-
-      data = JSON.parse(File.read(@file))
+      validate_input
+      data = JSON.parse(File.read(configs[:file]))
 
       data["features"].each do |raw|
-        Decidim::Scope.create!(
-          name: { "en" => raw["properties"]["nom_comm"], "fr" => raw["properties"]["nom_comm"] },
-          code: raw["properties"]["insee_comm"],
-          scope_type: Decidim::ScopeType.where("name ->> 'en'= ?", "municipality").first,
-          organization: Decidim::Organization.first,
-          parent: nil,
-          geojson: {
-            color: "#157173",
-            geometry: {
-              "type": "Feature",
-              "properties": raw["properties"],
-              "formattedProperties": raw["properties"],
-              "geometry": raw["geometry"]
-            },
-            parsed_geometry: {
-              "type": "Feature",
-              "properties": raw["properties"],
-              "formattedProperties": raw["properties"],
-              "geometry": raw["geometry"]
-            }
-          }
-        )
+        Decidim::Scope.create! scope_params(raw)
       end
-    rescue SystemExit, ActiveModel::UnknownAttributeError => e
-      @logger.fatal task_aborted_message(e) unless @verbose_mode
-
-      # puts task_aborted_message(e)
-
-      # data["features"][0].keys
-      # Count : 1238
-      # => "type" : String
-      # "geometry" : Hash
-      #   - type : String
-      #   - coordinates : String
-      # "properties" : Hash
-      #   - st_length_shape : String
-      #   - insee_comm : String
-      #   - geo_point_2d : String
-      #   - nom_comm : String
-      #   - st_area_shape : String
-      #   - epci : String
-      #   - insee_dep : String
+    rescue SystemExit,
+           ActiveModel::UnknownAttributeError,
+           ActiveRecord::RecordNotFound => e
+      @logger.fatal task_aborted_message(e)
     end
   end
 end
 
 private
 
-def logger_output(base_name = "import-geojson")
-  return Logger.new("log/#{base_name}-#{Time.zone.now.strftime "%Y-%m-%d-%H:%M:%S"}.log") unless @verbose_mode
+def logger
+  return Logger.new(STDOUT) if verbose?
 
-  Logger.new(STDOUT)
+  Logger.new("log/import-geojson-#{Time.zone.now.strftime "%Y-%m-%d-%H:%M:%S"}.log")
 end
 
 def validate_input
-  validate_file
-  validate_process
-  validate_admin
+  validate_file(configs[:forced_file_extension].presence || ".geojson")
   validate_org
+  validate_color
 end
 
 def validate_org
-  if @org.class != Integer
-    puts "You must pass an organization id as an integer"
+  unless configs[:organization_id].is_a? Integer
+    @logger.error "You must pass an organization id as an integer"
     exit 1
   end
 
   unless current_organization
-    puts "Organization does not exist"
+    @logger.error "Organization does not exist"
+    exit 1
+  end
+end
+
+def validate_color
+  unless /^#([a-fA-F0-9]{6}|[a-fA-F0-9]{3})$/.match? configs[:color]
+    @logger.error "You must pass a color as hexadecimal
+Example: #FFFFFF
+If you don't specify color, default color will be '#{@default_hex_color}'
+"
     exit 1
   end
 end
 
 def validate_file(extension = ".csv")
-  unless File.exist?(@file)
-    puts "File does not exist, be sure to pass a full path."
+  unless File.exist? @configs[:file]
+    @logger.error "File does not exist, be sure to pass a full path."
     exit 1
   end
 
-  if extension == ".csv" && File.extname(@file) != ".csv"
-    puts "You must pass a CSV file"
+  if extension == ".csv" && File.extname(@configs[:file]) != ".csv"
+    @logger.error "You must pass a CSV file"
     exit 1
-  elsif extension == ".geojson" && File.extname(@file) != ".geojson"
-    puts "You must pass a GEOJSON file"
+  elsif extension == ".geojson" && File.extname(@configs[:file]) != ".geojson"
+    @logger.error "You must pass a GEOJSON file"
     exit 1
-  elsif extension != File.extname(@file)
-    puts "File extension has been forced to '#{extension}' but does not match current file extension '#{File.extname(@file)}' "
-    exit 1
-  end
-end
-
-def display_help
-  here_doc = <<~HEREDOC
-    Help:
-    :: Import Geojson ::
-    >  Usage: rake import:geojson FILE='<filename.geojson>' ORG=<organization_id>
-  HEREDOC
-
-  @logger.info here_doc unless @verbose_mode
-  exit 0
-end
-
-def check_csv(file)
-  file.each do |row|
-    # Check if id, first_name, last_name are nil
-    next unless row[0].nil? || row[1].nil? || row[2].nil?
-
-    puts "Something went wrong, empty field(s) on line #{$INPUT_LINE_NUMBER}"
-    puts row.inspect
+  elsif extension != File.extname(@configs[:file])
+    @logger.error "File extension has been forced to '#{extension}' but does not match current file extension '#{File.extname(@configs[:file])}' "
     exit 1
   end
 end
 
-def set_name(first_name, last_name)
-  first_name + " " + last_name
+def configs
+  @configs ||= {
+    verbose: ENV["VERBOSE"]&.strip,
+    file: ENV["FILE"]&.strip,
+    organization_id: org_id,
+    scope_type: ENV["SCOPE_TYPE"]&.strip,
+    forced_file_extension: ENV["FORCE_EXT_TO"]&.strip,
+    color: hex_color
+  }
 end
 
-def current_user
-  @current_user ||= Decidim::User.find(@admin)
+def org_id
+  return if ENV["ORG_ID"].blank?
+
+  ENV["ORG_ID"].strip.to_i if /\A\d+\z/.match? ENV["ORG_ID"].strip
 end
 
-def current_organization
-  @current_organization ||= Decidim::Organization.find(@org)
+def hex_color
+  return ENV["COLOR"] if ENV["COLOR"].present?
+
+  @default_hex_color
 end
 
-def current_process
-  @current_process ||= Decidim::ParticipatoryProcess.find(@process)
+def verbose?
+  @verbose ||= configs[:verbose].present? && configs[:verbose] == "true"
 end
 
 def task_aborted_message(err)
@@ -161,4 +114,58 @@ def task_aborted_message(err)
 
 Rake task aborted
 "
+end
+
+def display_help
+  here_doc = <<~HEREDOC
+    Help:
+    :: Import Geojson ::
+    >  Usage: rake import:geojson FILE='<filename.geojson>' ORG_ID=<organization_id> VERBOSE='true' FORCE_EXT_TO='.json' SCOPE_TYPE='municipality'
+
+    OPTIONAL PARAMETERS :
+
+    ORG_ID - String : Decidim organization ID
+    VERBOSE - String : Allows to output to stdout, if not 'true', writes logs in file
+    FORCE_EXT_TO - String : Allows to force file extension validation. You must begins the value with a dot
+    SCOPE_TYPE - String : Name of the Decidim Scope Type, by default '#{@default_scope_type}'
+    COLOR - String : Allows to define color on map. You must pass hexadecimal value only. Default to '#{@default_hex_color}'
+
+
+  HEREDOC
+
+  puts here_doc # Documentation should be printed on stdout even if verbose mode is disabled
+  @logger.info here_doc unless verbose?
+  exit 0
+end
+
+def current_organization
+  return if configs[:organization_id].blank?
+
+  @current_organization ||= Decidim::Organization.find(configs[:organization_id])
+end
+
+def scope_params(raw)
+  scope_type = Decidim::ScopeType.where("name ->> 'en'= ?", configs[:scope_type].presence || @default_scope_type)&.first
+  {
+    name: { en: raw["properties"]["nom_comm"], fr: raw["properties"]["nom_comm"] },
+    code: raw["properties"]["insee_comm"],
+    scope_type: scope_type,
+    organization: current_organization,
+    parent: nil,
+    geojson: {
+      color: hex_color,
+      geometry: {
+        "type": "Feature",
+        "properties": raw["properties"],
+        "formattedProperties": raw["properties"],
+        "geometry": raw["geometry"]
+      },
+      parsed_geometry: {
+        "type": "Feature",
+        "properties": raw["properties"],
+        "formattedProperties": raw["properties"],
+        "geometry": raw["geometry"]
+      }
+    }
+  }
 end
