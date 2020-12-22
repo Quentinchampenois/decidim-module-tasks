@@ -21,7 +21,7 @@ module Decidim
         end
 
         data = JSON.parse(File.read(configs[:file]))
-        data["features"].each do |raw|
+        data["features"]&.each do |raw|
           Decidim::Scope.create! params(raw)
         end
       end
