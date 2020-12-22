@@ -10,7 +10,7 @@ Gem::Specification.new do |s|
   s.email = ["26109239+Quentinchampenois@users.noreply.github.com"]
   s.license = "AGPL-3.0"
   s.homepage = "https://github.com/decidim/decidim-module-tasks"
-  s.required_ruby_version = ">= 2.6"
+  s.required_ruby_version = ">= 2.5"
 
   s.name = "decidim-tasks"
   s.summary = "A decidim tasks module"
