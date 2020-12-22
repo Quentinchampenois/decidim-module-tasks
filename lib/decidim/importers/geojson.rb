@@ -11,6 +11,23 @@ module Decidim
         configs
       end
 
+      def execute
+        display_help
+
+        validations do
+          validate_file(configs[:forced_file_extension].presence || ".geojson")
+          validate_org
+          validate_color
+        end
+
+        data = JSON.parse(File.read(configs[:file]))
+        data["features"].each do |raw|
+          Decidim::Scope.create! params(raw)
+        end
+      end
+
+      private
+
       def configs
         @configs ||= {
           verbose: ENV["VERBOSE"]&.strip,
@@ -81,22 +98,50 @@ If you don't specify color, default color will be '#{@default_values[:hex_color]
       end
 
       def display_help
+        return if configs[:file].present?
+
         here_doc = <<~HEREDOC
           Help:
           :: Import Geojson ::
           >  Usage: rake import:geojson FILE='<filename.geojson>' ORG_ID=<organization_id> VERBOSE='true' FORCE_EXT_TO='.json' SCOPE_TYPE='municipality'
            OPTIONAL PARAMETERS :
            ORG_ID - String : Decidim organization ID
-          VERBOSE - String : Allows to output to stdout, if not 'true', writes logs in file
-          FORCE_EXT_TO - String : Allows to force file extension validation. You must begins the value with a dot
-          SCOPE_TYPE - String : Name of the Decidim Scope Type, by default '#{@default_values[:scope_type]}'
-          COLOR - String : Allows to define color on map. You must pass hexadecimal value only. Default to '#{@default_values[:hex_color]}'
+           VERBOSE - String : Allows to output to stdout, if not 'true', writes logs in file
+           FORCE_EXT_TO - String : Allows to force file extension validation. You must begins the value with a dot
+           SCOPE_TYPE - String : Name of the Decidim Scope Type, by default '#{@default_values[:scope_type]}'
+           COLOR - String : Allows to define color on map. You must pass hexadecimal value only. Default to '#{@default_values[:hex_color]}'
 
         HEREDOC
 
         puts here_doc # Documentation should be printed on stdout even if verbose mode is disabled
         @logger.info here_doc unless verbose?
         exit 0
+      end
+
+      def params(raw)
+        scope_type = Decidim::ScopeType.where("name ->> 'en'= ?", configs[:scope_type].presence || @default_values[:scope_type])&.first
+        {
+          name: { en: raw["properties"]["nom_comm"], fr: raw["properties"]["nom_comm"] },
+          code: raw["properties"]["insee_comm"],
+          scope_type: scope_type,
+          organization: current_organization,
+          parent: nil,
+          geojson: {
+            color: hex_color,
+            geometry: {
+              "type": "Feature",
+              "properties": raw["properties"],
+              "formattedProperties": raw["properties"],
+              "geometry": raw["geometry"]
+            },
+            parsed_geometry: {
+              "type": "Feature",
+              "properties": raw["properties"],
+              "formattedProperties": raw["properties"],
+              "geometry": raw["geometry"]
+            }
+          }
+        }
       end
     end
   end

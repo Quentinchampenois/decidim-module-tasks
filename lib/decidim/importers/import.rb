@@ -5,7 +5,7 @@ module Decidim
     class Import
       attr_accessor :logger
 
-      def initialize(log_filename:, disable_validations: false)
+      def initialize(disable_validations: false)
         @log_filename = logger_filename
         @disable_validations = disable_validations
       end
@@ -13,6 +13,22 @@ module Decidim
       def configs
         raise NotImplementedError
       end
+
+      def execute
+        raise NotImplementedError
+      end
+
+      def task_aborted_message(err)
+        @logger.error("Rake task aborted") if err.blank?
+
+        @logger.error("Unexpected error occured:
+> Error : #{err}
+
+Rake task aborted
+")
+      end
+
+      private
 
       def logger_filename(filename = "importer")
         return filename if filename.present?
@@ -33,16 +49,6 @@ module Decidim
         # puts @help_msg # Documentation should be printed on stdout even if verbose mode is disabled
         # @logger.info @help_msg unless verbose?
         # exit 0
-      end
-
-      def task_aborted_message(err)
-        @logger.error("Rake task aborted") if err.blank?
-
-        @logger.error("Unexpected error occured:
-> Error : #{err}
-
-Rake task aborted
-")
       end
 
       def verbose?

@@ -9,19 +9,7 @@ namespace :tasks do
         log_filename: "import-geojson"
       )
 
-      @importer.display_help if @importer.configs[:file].blank?
-
-      @importer.validations do
-        @importer.validate_file(@importer.configs[:forced_file_extension].presence || ".geojson")
-        @importer.validate_org
-        @importer.validate_color
-      end
-
-      data = JSON.parse(File.read(@importer.configs[:file]))
-
-      data["features"].each do |raw|
-        Decidim::Scope.create! scope_params(raw)
-      end
+      @importer.execute
     rescue SystemExit,
            ActiveModel::UnknownAttributeError,
            ActiveRecord::RecordNotFound => e
@@ -33,32 +21,4 @@ namespace :tasks do
       end
     end
   end
-end
-
-private
-
-def scope_params(raw)
-  scope_type = Decidim::ScopeType.where("name ->> 'en'= ?", @importer.configs[:scope_type].presence || @importer.default_values[:scope_type])&.first
-  {
-    name: { en: raw["properties"]["nom_comm"], fr: raw["properties"]["nom_comm"] },
-    code: raw["properties"]["insee_comm"],
-    scope_type: scope_type,
-    organization: @importer.current_organization,
-    parent: nil,
-    geojson: {
-      color: @importer.hex_color,
-      geometry: {
-        "type": "Feature",
-        "properties": raw["properties"],
-        "formattedProperties": raw["properties"],
-        "geometry": raw["geometry"]
-      },
-      parsed_geometry: {
-        "type": "Feature",
-        "properties": raw["properties"],
-        "formattedProperties": raw["properties"],
-        "geometry": raw["geometry"]
-      }
-    }
-  }
 end
