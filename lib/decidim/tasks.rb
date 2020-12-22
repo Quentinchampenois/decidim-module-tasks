@@ -4,6 +4,8 @@ require "decidim/tasks/admin"
 require "decidim/tasks/engine"
 require "decidim/tasks/admin_engine"
 require "decidim/tasks/component"
+require "decidim/importers/import"
+require "decidim/importers/geojson"
 
 module Decidim
   # This namespace holds the logic of the `Tasks` component. This component

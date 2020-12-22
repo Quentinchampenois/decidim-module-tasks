@@ -3,16 +3,21 @@
 module Decidim
   module Importers
     class Import
-      @logger = Rails.logger
+      attr_accessor :logger
 
-      def initialize(test, org_id:, disable_validations: false)
-        @test = test
-        @org_id = org_id.strip
+      def initialize(log_filename:, disable_validations: false)
+        @log_filename = logger_filename
         @disable_validations = disable_validations
       end
 
       def configs
         raise NotImplementedError
+      end
+
+      def logger_filename(filename = "importer")
+        return filename if filename.present?
+
+        "importer"
       end
 
       def validations
@@ -21,30 +26,33 @@ module Decidim
         yield
       end
 
-      def display_help(help_message)
-        puts help_message # Documentation should be printed on stdout even if verbose mode is disabled
-        @logger.info help_message unless verbose?
-        exit 0
+      def display_help
+        raise NotImplementedError
+
+        # Example
+        # puts @help_msg # Documentation should be printed on stdout even if verbose mode is disabled
+        # @logger.info @help_msg unless verbose?
+        # exit 0
       end
 
       def task_aborted_message(err)
-        return "Rake task aborted" if err.blank?
+        @logger.error("Rake task aborted") if err.blank?
 
-        "Unexpected error occured:
+        @logger.error("Unexpected error occured:
 > Error : #{err}
 
 Rake task aborted
-"
+")
       end
 
       def verbose?
         @verbose ||= configs[:verbose].present? && (configs[:verbose] == "true" || configs[:verbose] == "1")
       end
 
-      def org_id
-        return if @org_id.blank?
+      def set_logger
+        return Logger.new(STDOUT) if verbose?
 
-        @org_id.to_i if /\A\d+\z/.match? @org_id
+        Logger.new("log/#{@log_filename}-#{Time.zone.now.strftime "%Y-%m-%d-%H:%M:%S"}.log")
       end
     end
   end
