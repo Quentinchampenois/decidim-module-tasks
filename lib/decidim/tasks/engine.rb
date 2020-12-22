@@ -16,7 +16,7 @@ module Decidim
       end
 
       initializer "decidim_tasks.assets" do |app|
-        app.config.assets.precompile += %w[decidim_tasks_manifest.js decidim_tasks_manifest.css]
+        app.config.assets.precompile += %w(decidim_tasks_manifest.js decidim_tasks_manifest.css)
       end
     end
   end
